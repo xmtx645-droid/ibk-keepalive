@@ -1,0 +1,47 @@
+name: instabox-keepalive
+
+on:
+  schedule:
+    # 每 15 分钟一次（GitHub 最短 5 分钟粒度）
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: resume + start + ping
+        env:
+          KEY: ${{ secrets.INSTABOX_API_KEY }}
+          M: m_agq3ilf22nhktdsib66fmd477m
+        run: |
+          set -u
+          RID="gh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          echo "== 1) resume（机器被闲置暂停时唤醒） =="
+          curl -sS -X POST "https://api.instabox.sh/v1/machines/$M/resume" \
+            -H "X-API-Key: $KEY" \
+            -H "Idempotency-Key: resume-$RID" \
+            -H 'Content-Type: application/json' \
+            -d '{}' || true
+
+          sleep 5
+
+          echo "== 2) start（机器被 2 小时上限停掉时拉起） =="
+          curl -sS -X POST "https://api.instabox.sh/v1/machines/$M/start" \
+            -H "X-API-Key: $KEY" \
+            -H "Idempotency-Key: start-$RID" \
+            -H 'Content-Type: application/json' \
+            -d '{}' || true
+
+          sleep 8
+
+          echo "== 3) ping（有活动就不会被判定闲置） =="
+          curl -sS -X POST "https://api.instabox.sh/v1/machines/$M/exec" \
+            -H "X-API-Key: $KEY" \
+            -H 'Content-Type: application/json' \
+            -d '{"cmd":"date -u; docker ps --format \"{{.Names}} {{.Status}}\""}' || true
+
+          echo "== 4) 机器状态 =="
+          curl -sS "https://api.instabox.sh/v1/machines/$M" -H "X-API-Key: $KEY" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('state =', d.get('state'), '| runStartedAt =', d.get('runStartedAt'))"
