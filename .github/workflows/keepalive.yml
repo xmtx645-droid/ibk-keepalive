@@ -2,8 +2,9 @@ name: instabox-keepalive
 
 on:
   schedule:
-    # 每 15 分钟一次（GitHub 最短 5 分钟粒度）
-    - cron: "*/15 * * * *"
+    # 每 5 分钟一次：让每个 30 分钟窗口里至少有 5 个「有工作的分钟」，
+    # 免费套餐的动态运行时长就会不断把 2 小时窗口延长，避免被强制暂停。
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -25,18 +26,18 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{}' || true
 
-          sleep 5
+          sleep 3
 
-          echo "== 2) start（机器被 2 小时上限停掉时拉起） =="
+          echo "== 2) start（机器被停止时拉起） =="
           curl -sS -X POST "https://api.instabox.sh/v1/machines/$M/start" \
             -H "X-API-Key: $KEY" \
             -H "Idempotency-Key: start-$RID" \
             -H 'Content-Type: application/json' \
             -d '{}' || true
 
-          sleep 8
+          sleep 5
 
-          echo "== 3) ping（有活动就不会被判定闲置） =="
+          echo "== 3) ping（算作「有工作」，同时防闲置暂停） =="
           curl -sS -X POST "https://api.instabox.sh/v1/machines/$M/exec" \
             -H "X-API-Key: $KEY" \
             -H 'Content-Type: application/json' \
@@ -44,4 +45,4 @@ jobs:
 
           echo "== 4) 机器状态 =="
           curl -sS "https://api.instabox.sh/v1/machines/$M" -H "X-API-Key: $KEY" \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); print('state =', d.get('state'), '| runStartedAt =', d.get('runStartedAt'))"
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('state =', d.get('state'), '| runStartedAt =', d.get('runStartedAt'), '| maxRunMinutes =', d.get('maxRunMinutes'), '| cooldownUntil =', d.get('cooldownUntil'))"
